@@ -34,6 +34,7 @@ module JSON
       TRUE                  = /true/
       FALSE                 = /false/
       NULL                  = /null/
+      NEW_LINE               = /[\r\n]/
       IGNORE                = %r(
         (?:
          //[^\n\r]*[\n\r]| # line comments
@@ -45,7 +46,7 @@ module JSON
           /(?=\*/)      # single slash before this comment's end
          )*
            \*/               # the End of this comment
-           |[ \t\r\n]+       # whitespaces: space, horicontal tab, lf, cr
+           |[ \t]+       # whitespaces: space, horicontal tab
         )+
       )mx
 
@@ -73,6 +74,8 @@ module JSON
       # * *decimal_class*: Specifies which class to use instead of the default
       #    (Float) when parsing decimal numbers. This class must accept a single
       #    string argument in its constructor.
+      # * *track_lines*: Specifies if line numbers should be tracked and stored
+      #    alongside the parsed values.
       def initialize(source, opts = {})
         opts ||= {}
         source = convert_encoding source
@@ -99,6 +102,9 @@ module JSON
         @array_class  = opts[:array_class] || Array
         @decimal_class = opts[:decimal_class]
         @match_string = opts[:match_string]
+        @track_lines = opts[:track_lines] || false
+
+        @current_line = 0
       end
 
       alias source string
@@ -226,6 +232,8 @@ module JSON
           obj = parse_object
           @current_nesting -= 1
           obj
+        when scan(NEW_LINE)
+          @current_line += 1
         when @allow_nan && scan(NAN)
           NaN
         when @allow_nan && scan(INFINITY)
@@ -262,6 +270,8 @@ module JSON
               raise ParserError, "expected next element in array at '#{peek(20)}'!"
             end
             break
+          when scan(NEW_LINE)
+            @current_line += 1
           when skip(IGNORE)
             ;
           else
@@ -288,6 +298,10 @@ module JSON
             skip(IGNORE)
             unless UNPARSED.equal?(value = parse_value)
               result[@symbolize_names ? string.to_sym : string] = value
+              if @track_lines
+                line_string = string + '_JSONlocation'
+                result[@symbolize_names ? line_string.to_sym : line_string] = @current_line
+              end
               delim = false
               skip(IGNORE)
               if scan(COLLECTION_DELIMITER)
@@ -310,6 +324,8 @@ module JSON
               result = klass.json_create(result)
             end
             break
+          when scan(NEW_LINE)
+            @current_line += 1
           when skip(IGNORE)
             ;
           else
